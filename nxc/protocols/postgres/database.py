@@ -60,7 +60,6 @@ class database(BaseDB):
             ForeignKeyConstraint(["hostid"], ["hosts.id"]),
         )
 
-    # роль с правом "superuser" в postgres — ближайший аналог "admin" в других протоколах
     class AdminRelation(Base):
         __tablename__ = "admin_relations"
         id = Column(Integer)

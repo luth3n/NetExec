@@ -45,8 +45,6 @@ class postgres(connection):
     def plaintext_login(self, username, password):
         self.username = username
         self.password = password
-        # сбрасываем на каждую попытку, иначе флаг "утекает" с предыдущей учётки
-        # при переборе нескольких пар логин/пароль на одном объекте connection
         self.admin_privs = False
 
         try:
@@ -56,13 +54,8 @@ class postgres(connection):
                 dbname=self.args.database,
                 connect_timeout=self.args.postgres_timeout,
             ) as conn, conn.cursor() as cur:
-                # обе проверки - версия и rolsuper - делаем в одном соединении/курсоре,
-                # а не открываем второе подключение, как было в check_if_admin() отдельно
                 cur.execute("SHOW server_version")
                 self.remote_version = cur.fetchone()[0]
-
-                # current_user - это та роль, которой мы только что залогинились;
-                # так безопаснее и логичнее, чем подставлять username в запрос напрямую
                 cur.execute("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")
                 row = cur.fetchone()
                 self.admin_privs = bool(row[0]) if row else False
@@ -71,15 +64,11 @@ class postgres(connection):
             self.logger.fail(f"{username}:{process_secret(password)} {e}")
             return False
         except Exception as e:
-            # более широкий except: ловит ошибки прав/протокола внутри самих запросов
-            # (InsufficientPrivilege и т.п.), а не только ошибки установления соединения
             self.logger.fail(f"{username}:{process_secret(password)} Error: {e}")
             return False
 
-        # --- запись результатов в БД workspace ---
         host_id = self.db.add_host(self.host, self.port, self.remote_version)
         if host_id is None:
-            # add_host() не возвращает id при первой вставке хоста (upsert без RETURNING)
             hosts = self.db.get_hosts(self.host)
             host_id = hosts[0].id if hosts else None
         elif isinstance(host_id, list):
