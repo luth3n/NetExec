@@ -6,6 +6,7 @@ from psycopg import OperationalError
 from nxc.connection import connection, highlight
 from nxc.logger import NXCAdapter
 from nxc.config import process_secret
+from nxc.protocols.postgres.proto_args import DEFAULT_CREDS
 
 
 class postgres(connection):
@@ -26,13 +27,39 @@ class postgres(connection):
     def proto_flow(self):
         self.proto_logger()
         if self.create_conn_obj():
-            if self.login():
+            logged_in = self.login_default_creds() if self.args.default_creds else self.login()
+            if logged_in:
                 if self.args.module:
                     self.load_modules()
-                    #self.logger.debug("Calling modules")
+                    self.logger.debug("Calling modules")
                     self.call_modules()
                 else:
                     self.call_cmd_args()
+
+    def create_conn_obj(self):
+        try:
+            s = socket.create_connection((self.host, self.port), timeout=self.args.postgres_timeout)
+            s.close()
+            return True
+        except OSError:
+            return False
+
+    def login_default_creds(self):
+        """Перебирает встроенный список часто встречающихся дефолтных кредов PostgreSQL.
+
+        Не трогает self.args.username/password (общий объект на все потоки-цели),
+        а вызывает try_credentials() напрямую для каждой пары - так остаются рабочими
+        --continue-on-success, --gfail-limit/--ufail-limit/--fail-limit и запись в БД,
+        т.к. вся эта логика уже встроена в try_credentials()/plaintext_login().
+        """
+        self.logger.debug(f"Trying {len(DEFAULT_CREDS)} built-in default credential pair(s)")
+        owned = False
+        for username, password in DEFAULT_CREDS:
+            if self.try_credentials(None, username, owned, password, "plaintext", None):
+                owned = True
+                if not self.args.continue_on_success:
+                    return True
+        return owned
 
     def create_conn_obj(self):
         try:
