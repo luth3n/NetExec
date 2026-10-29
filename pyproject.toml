@@ -50,6 +50,8 @@ dependencies = [
     "certipy-nxc>=5.1.0.post1",
     "impacket @ git+https://github.com/fortra/impacket",
     "pynfsclient @ git+https://github.com/Pennyw0rth/NfsClient",
+    "netifaces2>=0.0.22",
+    "psycopg[binary]>=3.1.0"
 ]
 
 [project.urls]
@@ -100,6 +102,11 @@ dev = [
 exclude-newer = "1 day"
 # Temporary: certipy-nxc 5.1.0.post1 was published 2026-10-14, remove once it is older than 1 day
 exclude-newer-package = { certipy-nxc = "2026-10-14T17:00:00Z" }
+override-dependencies = [
+    "netifaces; sys_platform == 'never'", # отключаем оригинальный netifaces
+    "netifaces2",                          # устанавливаем вместо него рабочий форк
+]
+
 
 [tool.ruff]
 preview = true
@@ -121,6 +128,7 @@ ignore = [
 fixable = ["ALL"]
 unfixable = []
 per-file-ignores = {}
+
 
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
