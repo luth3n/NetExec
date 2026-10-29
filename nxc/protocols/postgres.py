@@ -14,6 +14,7 @@ class postgres(connection):
         self.protocol = "POSTGRES"
         self.remote_version = "Unknown"
         self.admin_privs = False
+        self.postgres = False
         super().__init__(args, db, host)
 
     def proto_logger(self):
@@ -36,22 +37,11 @@ class postgres(connection):
                 else:
                     self.call_cmd_args()
 
-    def create_conn_obj(self):
-        try:
-            s = socket.create_connection((self.host, self.port), timeout=self.args.postgres_timeout)
-            s.close()
-            return True
-        except OSError:
-            return False
+
+
 
     def login_default_creds(self):
-        """Перебирает встроенный список часто встречающихся дефолтных кредов PostgreSQL.
 
-        Не трогает self.args.username/password (общий объект на все потоки-цели),
-        а вызывает try_credentials() напрямую для каждой пары - так остаются рабочими
-        --continue-on-success, --gfail-limit/--ufail-limit/--fail-limit и запись в БД,
-        т.к. вся эта логика уже встроена в try_credentials()/plaintext_login().
-        """
         self.logger.debug(f"Trying {len(DEFAULT_CREDS)} built-in default credential pair(s)")
         owned = False
         for username, password in DEFAULT_CREDS:
@@ -61,9 +51,17 @@ class postgres(connection):
                     return True
         return owned
 
+
     def create_conn_obj(self):
         try:
             s = socket.create_connection((self.host, self.port), timeout=self.args.postgres_timeout)
+            s.sendall(b"\x00\x00\x00\x08\x04\xd2\x16\x2f")
+            response = s.recv(1)
+            if response in (b"S", b"N"):
+                self.postgres = True
+                self.logger.display("PostgreSQL")
+            else:
+                pass
             s.close()
             return True
         except OSError:
