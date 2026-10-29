@@ -88,6 +88,8 @@ a = Analysis(
         'unicrypto.backends.pycryptodomex',
         'dateutil.relativedelta',
         'sspilib.raw._text',
+        'psycopg',
+        'psycopg_binary',
      ],
      hookspath=['./nxc/.hooks'],
      runtime_hooks=[],
