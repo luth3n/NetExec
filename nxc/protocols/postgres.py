@@ -38,8 +38,6 @@ class postgres(connection):
                     self.call_cmd_args()
 
 
-
-
     def login_default_creds(self):
 
         self.logger.debug(f"Trying {len(DEFAULT_CREDS)} built-in default credential pair(s)")
@@ -73,18 +71,19 @@ class postgres(connection):
         self.admin_privs = False
 
         try:
-            with psycopg.connect(
+            self.conn = psycopg.connect(
                 host=self.host, port=self.port,
                 user=username, password=password,
                 dbname=self.args.database,
                 connect_timeout=self.args.postgres_timeout,
-            ) as conn, conn.cursor() as cur:
-                cur.execute("SHOW server_version")
-                self.remote_version = cur.fetchone()[0]
-                cur.execute("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")
-                row = cur.fetchone()
-                self.admin_privs = bool(row[0]) if row else False
-
+            )
+            cur = self.conn.cursor()
+            cur.execute("SHOW server_version")
+            self.remote_version = cur.fetchone()[0]
+            cur.execute("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")
+            row = cur.fetchone()
+            self.admin_privs = bool(row[0]) if row else False
+            #self.conn.close()
         except OperationalError as e:
             self.logger.fail(f"{username}:{process_secret(password)} {e}")
             return False
@@ -111,3 +110,46 @@ class postgres(connection):
             f"{highlight(f'PostgreSQL {self.remote_version}')}"
         )
         return True
+
+    def get_file(self):
+        try:
+            for remote_path, local_path in self.args.get_file:
+                with self.conn.cursor() as curr:
+                    curr.execute("SELECT pg_read_binary_file(%s)",(remote_path,))
+                    data = curr.fetchone()[0]
+                    with open(local_path, "wb") as f:
+                        f.write(data)
+                    self.logger.success(f"[+] Downloaded: {remote_path} -> {local_path}")
+        except Exception as e:
+            self.logger.fail(f"Error: {e}")
+
+    def put_file(self):
+        try:
+            for local_path, remote_path in self.args.put_file:
+                with open(local_path, "rb") as f:
+                    data = f.read()
+
+                with self.conn.cursor() as curr:
+                    oid = curr.execute(
+                        "SELECT lo_from_bytea(0, %s)",
+                        (data,)
+                    ).fetchone()[0]
+
+                    curr.execute(
+                        "SELECT lo_export(%s, %s)",
+                        (oid, remote_path)
+                    )
+
+                    curr.execute(
+                        "SELECT lo_unlink(%s)",
+                        (oid,)
+                    )
+
+                    self.conn.commit()
+
+                self.logger.success(f"[+] Uploaded: {local_path} -> {remote_path}")
+        except Exception as e:
+            self.logger.fail(f"Error: {e}")
+
+
+

@@ -31,4 +31,8 @@ def proto_args(parser, parents):
         help="Try a built-in list of common default PostgreSQL credentials instead of -u/-p",
     )
 
+    files_group = pg_parser.add_argument_group("File Operations")
+    files_group.add_argument("--put-file", action="append", nargs=2, metavar="FILE", help="Put a local file into remote target, ex: whoami.txt /tmp/whoami.txt")
+    files_group.add_argument("--get-file", action="append", nargs=2, metavar="FILE", help="Get a remote file, ex: /tmp/whoami.txt whoami.txt")
+
     return parser
