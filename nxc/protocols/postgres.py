@@ -8,7 +8,11 @@ from nxc.logger import NXCAdapter
 from nxc.config import process_secret
 from nxc.protocols.postgres.proto_args import DEFAULT_CREDS
 
-
+def _s(val, default="-"):
+        """Safely stringify a value for table-formatted logging — handles None,
+        ipaddress objects (inet/cidr columns), Decimal, UUID, datetime, etc."""
+        return default if val is None else str(val)
+    
 class postgres(connection):
     def __init__(self, args, db, host):
         self.protocol = "POSTGRES"
@@ -145,3 +149,104 @@ class postgres(connection):
                 self.logger.success(f"[+] Uploaded: {local_path} -> {remote_path}")
         except Exception as e:
             self.logger.fail(f"Error: {e}")
+
+
+    def users(self):
+        query = "SELECT usename, usesuper FROM pg_user"
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(query)
+                rows = cur.fetchall()
+        except Exception as err:
+            self.logger.fail(f"Error: {err}")
+            if not rows:
+                context.log.fail("No users returned")
+                return
+
+        self.logger.success(f"Found {len(rows)} user(s)")
+        self.logger.highlight(f"{'USERNAME':<25}{'usesuper':<5}")
+        for username, usesuper in rows:
+            self.logger.highlight(f"{username:<25}{usesuper:<5}")
+
+
+    def dbs(self):
+        query = """
+            SELECT
+                d.datname,
+                pg_catalog.pg_get_userbyid(d.datdba) AS owner,
+                pg_catalog.pg_size_pretty(pg_catalog.pg_database_size(d.datname)) AS size,
+                d.datistemplate,
+                d.datallowconn
+            FROM pg_catalog.pg_database d
+            ORDER BY d.datname;
+        """
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(query)
+                rows = cur.fetchall()
+        except Exception as err:
+            self.logger.fail(f"Error: {err}")
+            if not rows:
+                self.logger.fail("No databases returned")
+                return
+
+        self.logger.success(f"Found {len(rows)} database(s)")
+        self.logger.highlight(f"{'DATABASE':<25}{'OWNER':<20}{'SIZE':<12}{'TEMPLATE':<10}{'ALLOW CONN'}")
+
+        for datname, owner, size, is_template, allow_conn in rows:
+            self.logger.highlight(
+                f"{datname:<25}{owner:<20}{size:<12}{'Yes' if is_template else 'No':<10}"
+                f"{'Yes' if allow_conn else 'No'}"
+            )
+
+    def passwords(self):
+        query = """SELECT rolname, rolpassword
+                    FROM pg_catalog.pg_authid
+                    WHERE rolcanlogin = true
+                    AND rolpassword IS NOT NULL;
+                """
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(query)
+                rows = cur.fetchall()
+        except Exception as err:
+            self.logger.fail(f"Error: {err}")
+            if not rows:
+                self.logger.fail("Error while querying passwords:")
+                return
+
+        self.logger.success(f"Found {len(rows)} password(s)")
+        self.logger.highlight(f"{'USERNAME':<25}{'PASS':<50}")
+
+        for username, password in rows:
+            self.logger.highlight(f"{username:<25}{password:<50}")
+
+
+
+
+    def sessions(self):
+        query = """SELECT usename, client_addr, state, query
+                    FROM pg_stat_activity;
+                """
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(query)
+                rows = cur.fetchall()
+        except Exception as err:
+            self.logger.fail(f"Error: {err}")
+            if not rows:
+                self.logger.fail("Error while querying sessions:")
+                return
+
+        self.logger.success(f"Found {len(rows)} session(s)")
+        self.logger.highlight(f"{'USENAME':<25}{'CLIENT_ADDR':<50}{'STATE':<10}{'QUERY':<100}")
+
+        for username, client_addr, state, query in rows:
+           self.logger.highlight(f"{_s(username):<25}{_s(client_addr):<50}{_s(state):<10}{_s(query):<100}")
+
+
+
+
+
+
+
