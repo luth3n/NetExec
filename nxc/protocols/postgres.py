@@ -12,6 +12,60 @@ def _s(val, default="-"):
         """Safely stringify a value for table-formatted logging — handles None,
         ipaddress objects (inet/cidr columns), Decimal, UUID, datetime, etc."""
         return default if val is None else str(val)
+
+
+
+
+def print_table(headers, rows):
+    """Pretty-printing SQL results in the terminal"""
+    rows = [
+        [str(value) if value is not None else "NULL" for value in row]
+        for row in rows
+    ]
+
+    widths = []
+
+    for i, header in enumerate(headers):
+        max_width = max(
+            [len(str(header))] +
+            [len(row[i]) for row in rows]
+        )
+        widths.append(max_width)
+
+    separator = "+" + "+".join(
+        "-" * (width + 2) for width in widths
+    ) + "+"
+
+    def format_row(row):
+        return "| " + " | ".join(
+            str(value).ljust(widths[i])
+            for i, value in enumerate(row)
+        ) + " |"
+
+    print(separator)
+    print(format_row(headers))
+    print(separator)
+
+    for row in rows:
+        print(format_row(row))
+
+    print(separator)
+    print(f"Total rows: {len(rows)}")
+
+
+def execute_query(cur, sql):
+    """Execute an SQL query and display the results or execution status"""
+    cur.execute(sql)
+    if cur.description is not None:
+        rows = cur.fetchall()
+        headers = [desc.name for desc in cur.description]
+        print_table(headers, rows)
+    else:
+        print("\033[92mSQL executed successfully!\033[0m")
+        print(f"Affected rows: {cur.rowcount}")
+
+
+
     
 class postgres(connection):
     def __init__(self, args, db, host):
@@ -121,6 +175,7 @@ class postgres(connection):
                     self.logger.success(f"[+] Downloaded: {remote_path} -> {local_path}")
         except Exception as e:
             self.logger.fail(f"Error: {e}")
+            return
 
     def put_file(self):
         try:
@@ -149,6 +204,7 @@ class postgres(connection):
                 self.logger.success(f"[+] Uploaded: {local_path} -> {remote_path}")
         except Exception as e:
             self.logger.fail(f"Error: {e}")
+            return
 
 
     def users(self):
@@ -159,9 +215,10 @@ class postgres(connection):
                 rows = cur.fetchall()
         except Exception as err:
             self.logger.fail(f"Error: {err}")
-            if not rows:
-                context.log.fail("No users returned")
-                return
+            return
+        if not rows:
+            context.log.fail("No users returned")
+            return
 
         self.logger.success(f"Found {len(rows)} user(s)")
         self.logger.highlight(f"{'USERNAME':<25}{'usesuper':<5}")
@@ -186,9 +243,10 @@ class postgres(connection):
                 rows = cur.fetchall()
         except Exception as err:
             self.logger.fail(f"Error: {err}")
-            if not rows:
-                self.logger.fail("No databases returned")
-                return
+            return
+        if not rows:
+            self.logger.fail("No databases returned")
+            return
 
         self.logger.success(f"Found {len(rows)} database(s)")
         self.logger.highlight(f"{'DATABASE':<25}{'OWNER':<20}{'SIZE':<12}{'TEMPLATE':<10}{'ALLOW CONN'}")
@@ -211,17 +269,16 @@ class postgres(connection):
                 rows = cur.fetchall()
         except Exception as err:
             self.logger.fail(f"Error: {err}")
-            if not rows:
-                self.logger.fail("Error while querying passwords:")
-                return
+            return
+        if not rows:
+            self.logger.fail("Error while querying passwords:")
+            return
 
         self.logger.success(f"Found {len(rows)} password(s)")
         self.logger.highlight(f"{'USERNAME':<25}{'PASS':<50}")
 
         for username, password in rows:
             self.logger.highlight(f"{username:<25}{password:<50}")
-
-
 
 
     def sessions(self):
@@ -234,9 +291,9 @@ class postgres(connection):
                 rows = cur.fetchall()
         except Exception as err:
             self.logger.fail(f"Error: {err}")
-            if not rows:
-                self.logger.fail("Error while querying sessions:")
-                return
+        if not rows:
+            self.logger.fail("Error while querying sessions:")
+            return
 
         self.logger.success(f"Found {len(rows)} session(s)")
         self.logger.highlight(f"{'USENAME':<25}{'CLIENT_ADDR':<50}{'STATE':<10}{'QUERY':<100}")
@@ -246,7 +303,39 @@ class postgres(connection):
 
 
 
+    def sql(self):
+        query = self.args.sql[0]
+        try:
+            with self.conn.cursor() as cur:
+                execute_query(cur, query)
+                return
+                #rows = cur.fetchall()
+        except Exception as err:
+            self.logger.fail(f"Error: {err}")
+            return
 
+    def read_file(self):
+        file_path = self.args.read_file[0]
+        query = "SELECT pg_read_file(%s)"
 
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(query, (file_path,))
+                row = cur.fetchone()
+
+                if not row or row[0] is None:
+                    self.logger.fail("File is empty or unavailable.")
+                    return
+
+                content = row[0]
+
+                self.logger.success(f"File: {file_path}")
+
+                for line_number, line in enumerate(content.splitlines(), start=1):
+                    print(f"{line}")
+
+        except Exception as err:
+            self.logger.fail(f"Unable to read file: {err}")
+            return
 
 
