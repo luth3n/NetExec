@@ -158,7 +158,10 @@ class psql(connection):
             )
             self.check_if_admin()
         except OperationalError as e:
-            self.logger.fail(f"{username}:{process_secret(password)} {e}")
+            if "password authentication failed" in str(e):
+                self.logger.fail(f"{username}:{process_secret(password)}")
+            else:
+                self.logger.fail(f"{username}:{process_secret(password)} {e}")
             return False
         except Exception as e:
             self.logger.fail(f"{username}:{process_secret(password)} Error: {e}")
