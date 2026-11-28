@@ -199,7 +199,7 @@ class psql(connection):
                     if not cur.nextset():
                         break
         except Exception as e:
-            self.logger.fail(f"Failed to execute PostgreSQL query: {e}")
+            self.logger.fail(f"Failed to execute PostgreSQL query: {' - '.join(str(e).splitlines())}")
 
     def get_file(self):
         for remote_path, local_path in self.args.get_file:
